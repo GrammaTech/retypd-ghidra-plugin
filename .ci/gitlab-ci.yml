@@ -47,7 +47,7 @@ test-ci-pipeline:
     - echo "using docker image $IMAGE_NAME"
     - python3 -m venv venv
     - source venv/bin/activate
-    - python3 -m pip install -e .
+    - python3 -m pip install --pre --extra-index-url=$EXTRA_INDEX_URL -e .
     - cd GhidraRetypd && gradle test
   artifacts:
     reports:
