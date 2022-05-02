@@ -1,6 +1,7 @@
 variables:
   IMAGE_NAME: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG"
   EXTRA_INDEX_URL: https://__token__:$GL_PKG_API_TOKEN@git.grammatech.com/api/v4/projects/1587/packages/pypi/simple
+  GRADLE_OPTS: "-Dfile.encoding=utf-8"
 
 workflow:
   rules:
