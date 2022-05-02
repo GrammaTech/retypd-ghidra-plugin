@@ -20,8 +20,10 @@
 // for the correction version of Gradle to use for the Ghidra installation you specify.
 
 apply plugin: 'java-library'
-compileJava {options.encoding = "UTF-8"}
-compileTestJava {options.encoding = "UTF-8"}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
 
 //----------------------START "DO NOT MODIFY" SECTION------------------------------
 def ghidraInstallDir

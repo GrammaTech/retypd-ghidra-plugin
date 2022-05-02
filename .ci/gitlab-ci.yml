@@ -1,7 +1,6 @@
 variables:
   IMAGE_NAME: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG"
   EXTRA_INDEX_URL: https://__token__:$GL_PKG_API_TOKEN@git.grammatech.com/api/v4/projects/1587/packages/pypi/simple
-  GRADLE_OPTS: "-Dfile.encoding=utf-8"
   LANG: "en_US.UTF-8"
   LC_CTYPE: "en_US.UTF-8"
   LC_ALL: "en_US.UTF-8"
@@ -47,6 +46,9 @@ test-ci-pipeline:
   image: $IMAGE_NAME
   tags:
     - *default-runner
+  variables:
+    GRADLE_OPTS: "-Dfile.encoding=utf-8"
+    JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8"
   script:
     - echo "using docker image $IMAGE_NAME"
     - python3 -m venv venv

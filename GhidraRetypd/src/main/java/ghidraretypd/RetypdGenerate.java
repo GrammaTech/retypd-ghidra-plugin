@@ -345,7 +345,7 @@ public class RetypdGenerate {
       generateForProgram();
     }
 
-    Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    Gson gson = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
     RetypdResults res =
         new RetypdResults(
             program.getLanguage(), constraints, calculateCallgraph(), calculateNameMap());
