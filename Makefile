@@ -7,7 +7,7 @@ TESTPROJNAME=test-project
 all: GhidraRetypd.zip
 
 tests: $(TESTDIR)/resources/$(TESTPROJNAME).gpr
-	cd GhidraRetypd && gradle test --debug
+	cd GhidraRetypd && gradle test
 
 $(TESTDIR)/resources/$(TESTPROJNAME).gpr: $(TESTDIR)/resources/test-structs-hf
 	analyzeHeadless $(TESTDIR)/resources/ $(TESTPROJNAME) -import $(TESTDIR)/resources/test-structs-hf
