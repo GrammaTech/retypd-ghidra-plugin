@@ -48,10 +48,10 @@ test-ci-pipeline:
     - python3 -m venv venv
     - source venv/bin/activate
     - python3 -m pip install --pre --extra-index-url=$EXTRA_INDEX_URL -e .
-    - cd GhidraRetypd && gradle test
+    - make tests
   artifacts:
     reports:
-      junit: GhidraRetypd/build/reports/tests/test/index.html
+      junit: GhidraRetypd/build/test-results/test/TEST-TestRetypd.xml
 
 # Export to our internal PyPi repository
 export_internal:

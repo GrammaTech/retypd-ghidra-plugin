@@ -63,3 +63,10 @@ tasks.test {
 buildExtension {
     exclude 'gradle*'
 }
+
+test {
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
+    }
+}

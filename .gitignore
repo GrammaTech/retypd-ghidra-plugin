@@ -16,3 +16,10 @@ GhidraRetypd/.classpath
 GhidraRetypd/.gradle
 .vscode/
 *.zip
+
+# Delete test artifacts
+*.gpr
+*.rep/
+*.lock
+*.lock~
+GhidraRetypd/src/test/resources/test-structs-hf
