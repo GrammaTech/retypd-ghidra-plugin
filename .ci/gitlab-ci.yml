@@ -51,9 +51,9 @@ test-ci-pipeline:
     JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8"
   script:
     - echo "using docker image $IMAGE_NAME"
-    - python3 -m venv venv
+    - python3.8 -m venv venv
     - source venv/bin/activate
-    - python3 -m pip install --pre --extra-index-url=$EXTRA_INDEX_URL -e .
+    - python3.8 -m pip install --pre --extra-index-url=$EXTRA_INDEX_URL -e .
     - make tests
   artifacts:
     reports:
