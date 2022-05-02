@@ -58,7 +58,7 @@ export_internal:
   stage: export
   image: python:3.8-slim
   script:
-    - pip install -r twine requests pkginfo
+    - pip install --pre --extra-index-url=$EXTRA_INDEX_URL -r twine requests pkginfo
     - python3 setup.py bdist_wheel --dist-dir=$CI_PROJECT_DIR/dist
     - VERSION=$(python3 -c "from imp import load_source; pkginfo = load_source('pkginfo.version', 'ghidra_retypd_provider/version.py'); print(pkginfo.__version__)")
     # this job is not using $CI_JOB_TOKEN because it only has read access
