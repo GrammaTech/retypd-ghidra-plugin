@@ -19,6 +19,7 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.pcode.VarnodeAST;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -135,6 +136,11 @@ public class RetypdGenerate {
     FunctionManager funcManager = program.getFunctionManager();
     DecompileResults res = ifc.decompileFunction(func, 300, null);
     HighFunction highFunc = res.getHighFunction();
+
+    if (highFunc == null) {
+      Msg.warn(this, "Function " + func.getName() + " has no decompilation");
+      return;
+    }
 
     // Update parameters if we do not have any
     HighParamID highParams = res.getHighParamID();
