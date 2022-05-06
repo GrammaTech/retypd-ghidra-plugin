@@ -12,17 +12,17 @@ wget -nv https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghid
 unzip $GHIDRA -d third-party
 
 # Create some links in /usr/local/bin for convenience
-ln -s `pwd`/third-party/ghidra_${VERSION}_DEV/support/analyzeHeadless /usr/local/bin/analyzeHeadless
-ln -s `pwd`/third-party/ghidra_${VERSION}_DEV/ghidraRun /usr/local/bin/ghidraRun
+ln -s `pwd`/third-party/ghidra_${VERSION}_PUBLIC/support/analyzeHeadless /usr/local/bin/analyzeHeadless
+ln -s `pwd`/third-party/ghidra_${VERSION}_PUBLIC/ghidraRun /usr/local/bin/ghidraRun
 
 # Create a soft link so we don't have to remember the ghidra version
-ln -s `pwd`/third-party/ghidra_${VERSION}_DEV `pwd`/third-party/ghidra
+ln -s `pwd`/third-party/ghidra_${VERSION}_PUBLIC `pwd`/third-party/ghidra
 
 # Clean it up
 rm $GHIDRA
 
 # We need the ghidra jar anyway, so lets build it
-pushd `pwd`/third-party/ghidra_${VERSION}_DEV/support
+pushd `pwd`/third-party/ghidra_${VERSION}_PUBLIC/support
 ./buildGhidraJar
 popd
 
