@@ -2,13 +2,13 @@
 mkdir -p third-party
 
 # Installs ghidra from default sources
-GHIDRA=ghidra_10.1.3_PUBLIC_20220421.zip
+GHIDRA=ghidra_10.0.4_PUBLIC_20210928.zip
 
 # Get the version from the ghidra script
 IFS='_' read -ra PARSED_FILENAME <<< "$GHIDRA"
 VERSION=${PARSED_FILENAME[1]}
 # Get Ghidra from u4
-wget -nv https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_10.1.3_build/$GHIDRA
+wget -nv https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_10.0.4_build/$GHIDRA
 unzip $GHIDRA -d third-party
 
 # Create some links in /usr/local/bin for convenience
