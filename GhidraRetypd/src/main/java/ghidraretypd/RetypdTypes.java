@@ -1,3 +1,17 @@
+/**
+ * Retypd - machine code type inference Copyright (C) 2022 GrammaTech, Inc.
+ *
+ * <p>This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * <p>This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * <p>You should have received a copy of the GNU General Public License along with this program. If
+ * not, see <https://www.gnu.org/licenses/>.
+ */
 package ghidraretypd;
 
 import com.google.gson.Gson;
@@ -44,7 +58,7 @@ public class RetypdTypes {
   class StructField {
     public String name;
     public String type;
-    public int offset;
+    public long offset;
   }
 
   /**
@@ -67,7 +81,7 @@ public class RetypdTypes {
     }
 
     /** Compute the length of the struct */
-    int length(Map<String, ComplexType> allTypes) {
+    long length(Map<String, ComplexType> allTypes) {
       StructField lastField = null;
       // Find the last field.
       for (StructField field : fields) {
@@ -75,8 +89,8 @@ public class RetypdTypes {
           lastField = field;
         }
       }
-      // Compute the lenght of the last field.
-      int lastFieldLength = 4;
+      // Compute the length of the last field.
+      long lastFieldLength = 4;
       if (lastField.type.equals("float4_t")) {
         lastFieldLength = 4;
       } else if (lastField.type.equals("float8_t")) {
@@ -214,7 +228,7 @@ public class RetypdTypes {
       }
       StructureDataType struct =
           new StructureDataType(
-              new CategoryPath("/retypd"), type.name, type.length(types), datatypeMgr);
+              new CategoryPath("/retypd"), type.name, (int) type.length(types), datatypeMgr);
       datatypeMap.put(typePair.getKey(), struct);
     }
 
@@ -229,14 +243,18 @@ public class RetypdTypes {
         DataType fieldDataType = getDataType(field.type, datatypeMap);
         if (fieldDataType != null) {
           struct.replaceAtOffset(
-              field.offset, fieldDataType, getDataTypeLength(fieldDataType), field.name, "");
+              (int) field.offset,
+              fieldDataType,
+              (int) getDataTypeLength(fieldDataType),
+              field.name,
+              "");
         }
       }
     }
 
     // Update function prototypes
     for (Function func : funcMgr.getFunctions(true)) {
-      String name = func.getSymbol().getName(true);
+      String name = RetypdGenerate.function(func);
       if (types.containsKey(name)) {
         out.println("Replacing type of " + name);
         ComplexType typ = types.get(name);

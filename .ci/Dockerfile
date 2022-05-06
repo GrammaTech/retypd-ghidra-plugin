@@ -61,3 +61,14 @@ FROM base as interactive
 RUN apt-get -y update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
         vim ruby ssh firefox ack meld
+RUN python3.8 -m venv venv
+RUN . ./venv/bin/activate
+
+# Install retypd into the virtual environment
+RUN git clone https://github.com/GrammaTech/retypd.git /retypd/
+WORKDIR /retypd
+RUN python3.8 -m pip install .
+
+# Install ghidra_retypd into the virutal environment
+WORKDIR /ghidra_retypd
+RUN python3.8 -m pip install .

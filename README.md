@@ -1,7 +1,7 @@
 # retypd-ghidra-plugin
 
-This project implements a [Ghidra](https://ghidra-sre.org/) plugin that exposes
-a script which implements type inference utilizing the [Retypd](https://github.com/GrammaTech/retypd) algorithm.
+This project implements a [Ghidra](https://ghidra-sre.org/) plugin that
+integrates the [Retypd](https://github.com/GrammaTech/retypd) type analysis.
 
 ## Structure
 
@@ -18,6 +18,25 @@ This plugin involves two components:
 
 # Installation
 
+## Docker Install
+
+The quickest way to get started with the `retypd-ghidra-plugin` is to use the
+docker container available. This can be built from the root directory of the
+repository with:
+
+```bash
+docker build -t retypd-image --target interactive -f ./.ci/Dockerfile .
+```
+
+and run with:
+
+```bash
+docker run -it retypd-image
+```
+
+## Manual Install
+
+The retypd ghidra plugin can also be installed outside of a Dockerfile.
 First, the `GhidraRetypd` package can be installed using the Makefile at the
 root of this repository. First, make sure the `GHIDRA_INSTALL_DIR` environment
 variable points to the root of your Ghidra installation. Then, use
@@ -31,7 +50,7 @@ Make sure prior to launching your virtual environment created above is active,
 with `source ./venv/bin/activate`. Then, in the same terminal, you can launch
 Ghidra by invoking `$GHIDRA_INSTALL_DIR/ghidraRun`. Once launched, and a
 program loaded for analysis is ready, go to the Script Manager (either by
-going to `Window -> Script Manager` or by using the ![Play Button](https://git.grammatech.com/reverse-engineering/remath/ghidra/-/raw/72a8bac6d20c9b44ca56578ec3239088fee9c699/GhidraDocs/images/play.png)
+going to `Window -> Script Manager` or by using the ![Play Button](https://github.com/GrammaTech/ghidra/blob/master/GhidraDocs/images/play.png?raw=true)
 button in the tool bar). Then search for `Retypd.java`, and double click to run
-the script. Once the script has finihsed running, the types will be applied to
+the script. Once the script has finished running, the types will be applied to
 the current program.

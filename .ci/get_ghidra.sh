@@ -1,16 +1,14 @@
 #!/bin/bash
 mkdir -p third-party
 
-# Installs ghidra
-# Newer ghidras, downloaded as zip files, go in /u4/TARBALLS/remath.
-# We are now using a forked ghidra in reverse-engineering/remath/Ghidra
-GHIDRA=ghidra_10.0.4_DEV_20220201_linux64.zip
+# Installs ghidra from default sources
+GHIDRA=ghidra_10.1.3_PUBLIC_20220421.zip
 
 # Get the version from the ghidra script
 IFS='_' read -ra PARSED_FILENAME <<< "$GHIDRA"
 VERSION=${PARSED_FILENAME[1]}
 # Get Ghidra from u4
-wget -nv http://otsego.grammatech.com/u4/TARBALLS/remath/$GHIDRA
+wget -nv https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_10.1.3_build/$GHIDRA
 unzip $GHIDRA -d third-party
 
 # Create some links in /usr/local/bin for convenience
@@ -32,7 +30,7 @@ popd
 GRADLE=gradle-7.1.1-bin.zip
 
 # Get gradle from u4
-wget -nv http://otsego.grammatech.com/u4/TARBALLS/remath/$GRADLE
+wget -nv https://services.gradle.org/distributions/$GRADLE
 
 # Put it in /third-party
 unzip $GRADLE -d third-party

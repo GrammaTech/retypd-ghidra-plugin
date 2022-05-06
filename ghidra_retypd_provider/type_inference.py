@@ -1,3 +1,19 @@
+# Retypd - machine code type inference
+# Copyright (C) 2022 GrammaTech, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from dataclasses import dataclass
 import json
 from ghidra_retypd_provider.type_serialization import (
@@ -6,12 +22,12 @@ from ghidra_retypd_provider.type_serialization import (
 )
 from loguru import logger
 
-from typing import Optional, Tuple, Dict, List, Iterable
-from retypd import ConstraintSet, Program, Solver
+from typing import Optional, Tuple, Dict, List
+from retypd import ConstraintSet, Program, Solver, SolverConfig
 from retypd.clattice import CLattice, CLatticeCTypes
 
 from retypd.c_type_generator import CTypeGenerator
-from retypd.c_types import CType, FunctionType
+from retypd.c_types import CType
 from retypd.parser import SchemaParser
 from pathlib import Path
 from retypd.loggable import LogLevel
@@ -33,22 +49,6 @@ class FunctionPrototype:
     params: List[Optional[str]]
 
 
-def recover_original_names(
-    types: Iterable[CType], modified_names: Dict[str, str]
-) -> List[CType]:
-    """
-    Rename the function types based in the dictionary that maps
-    the modified procedure names to the original procedure names.
-    """
-    final_types = []
-    for ctype in types:
-        assert isinstance(ctype, FunctionType)
-        if ctype.name in modified_names:
-            ctype.name = modified_names[ctype.name]
-        final_types.append(ctype)
-    return final_types
-
-
 def get_int_and_pointer_size(language: str):
     """
     Get the size of integers and pointer for each
@@ -65,7 +65,7 @@ def get_int_and_pointer_size(language: str):
     raise RetypdGhidraError(f"Unknown ISA {language}")
 
 
-def constraints_from_json(path: Path) -> Tuple[str, Program, Dict[str, str]]:
+def constraints_from_json(path: Path) -> Tuple[str, Program]:
     """
     Load constraints from a JSON encoded file
     :returns: Language of original assembly, loaded type Program, and name map
@@ -75,7 +75,6 @@ def constraints_from_json(path: Path) -> Tuple[str, Program, Dict[str, str]]:
     language: str = data["language"]
     constraints: Dict[str, List[str]] = data["constraints"]
     callgraph: Dict[str, List[str]] = data["callgraph"]
-    nameMap: Dict[str, str] = data["nameMap"]
 
     parsed_constraints = {}
 
@@ -98,7 +97,7 @@ def constraints_from_json(path: Path) -> Tuple[str, Program, Dict[str, str]]:
         callgraph,
     )
 
-    return language, program, nameMap
+    return language, program
 
 
 def infer_types(json_in: Path, function: Optional[str] = None) -> List[CType]:
@@ -109,8 +108,15 @@ def infer_types(json_in: Path, function: Optional[str] = None) -> List[CType]:
     the type inference only considers the given function.
 
     """
-    language, program, modified_names = constraints_from_json(json_in)
-    solver = Solver(program, verbose=LogLevel.DEBUG)
+    language, program = constraints_from_json(json_in)
+    config = SolverConfig(
+        max_path_length=15,
+        max_paths_per_root=5000,
+        max_total_paths=100000,
+        keep_output_constraints=False,
+        precise_globals=False,
+    )
+    solver = Solver(program, config, verbose=LogLevel.DEBUG)
     _, sketches = solver()
     for f, sk in sketches.items():
         logger.debug("Sketches: ", f, sk)
@@ -123,7 +129,7 @@ def infer_types(json_in: Path, function: Optional[str] = None) -> List[CType]:
         int_size,
         pointer_size,
     )
-    return recover_original_names(gen().values(), modified_names)
+    return list(gen().values())
 
 
 def serialize_types(types: List[CType], dest: Path) -> None:

@@ -1,3 +1,17 @@
+/**
+ * Retypd - machine code type inference Copyright (C) 2022 GrammaTech, Inc.
+ *
+ * <p>This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * <p>This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * <p>You should have received a copy of the GNU General Public License along with this program. If
+ * not, see <https://www.gnu.org/licenses/>.
+ */
 package ghidraretypd;
 
 import com.google.gson.Gson;
@@ -30,11 +44,9 @@ import java.util.Set;
 /** Class for managing the generation of retypd constraints based on high-level PCode */
 public class RetypdGenerate {
   private Program program;
-  private Map<String, Set<String>> constraints;
 
   public RetypdGenerate(Program program) {
     this.program = program;
-    constraints = new HashMap<String, Set<String>>();
   }
 
   /**
@@ -43,7 +55,7 @@ public class RetypdGenerate {
    * @param var High-level varnode to translate
    * @return Type variable for use in constraints
    */
-  private String varnode(Varnode var) {
+  private static String varnode(Varnode var) {
     if (!(var instanceof VarnodeAST)) {
       return "";
     }
@@ -58,7 +70,7 @@ public class RetypdGenerate {
    * @param func Function whose name to translate
    * @return Type variable for use in constraints
    */
-  private String function(Function func) {
+  public static String function(Function func) {
     String name = func.getSymbol().getName();
     return name.replace(".", "_").replace("@", "_");
   }
@@ -70,7 +82,7 @@ public class RetypdGenerate {
    * @param num Which number of input to translate
    * @return Type path for use in constraints
    */
-  private String functionIn(Function func, int num) {
+  private static String functionIn(Function func, int num) {
     return function(func) + ".in_" + num;
   }
 
@@ -80,7 +92,7 @@ public class RetypdGenerate {
    * @param func Function to translate
    * @return Type path for use in constraints
    */
-  private String functionOut(Function func) {
+  private static String functionOut(Function func) {
     return function(func) + ".out";
   }
 
@@ -93,45 +105,180 @@ public class RetypdGenerate {
    * @param offset The offset into the varnode that is being dereferenced
    * @return Type path for use in constraints
    */
-  private String deref(Varnode src, String mode, long size, long offset) {
+  private static String deref(Varnode src, String mode, long size, long offset) {
     return varnode(src) + "." + mode + ".σ" + size + "@" + offset;
   }
 
   /**
    * Translate a high-level Pcode instruction to a dereference path string
    *
-   * @param op Pcode instruction that defines the address being dereferenced
+   * @param orig Varnode of the address being dereferenced
    * @param mode `store` or `load` for Pcode STORE/LOAD respectively
-   * @return Type path for use in cosntraints
+   * @return Type path for use in constraints
    */
-  private String derefLabel(PcodeOp op, String mode) {
+  private String derefLabel(Varnode orig, String mode) {
+    PcodeOp op = orig.getDef();
+
+    if (op == null) {
+      return deref(orig, mode, orig.getSize(), 0);
+    }
+
     switch (op.getOpcode()) {
       case PcodeOp.CAST:
         VarnodeAST castArg = (VarnodeAST) op.getInput(0);
         if (castArg.getDef() != null) {
-          return derefLabel(castArg.getDef(), mode);
+          return derefLabel(castArg, mode);
         } else {
           return deref(castArg, mode, op.getOutput().getSize(), 0);
         }
       case PcodeOp.INT_ADD:
+        if (op.getInput(0).isConstant() && !op.getInput(1).isConstant()) {
+          // Swap the arguments
+          Varnode lhs = op.getInput(0);
+          Varnode rhs = op.getInput(1);
+          op.setInput(lhs, 1);
+          op.setInput(rhs, 0);
+        }
+        // Fallthrough
       case PcodeOp.PTRSUB:
-        return deref(op.getInput(0), mode, op.getOutput().getSize(), op.getInput(1).getOffset());
+        if (op.getInput(1).isConstant() && !op.getInput(1).isAddress()) {
+          int offset = (int) op.getInput(1).getOffset();
+          if (offset >= 0) {
+            return deref(op.getInput(0), mode, op.getOutput().getSize(), offset);
+          }
+        }
+        break;
       case PcodeOp.PTRADD:
-        long offset = op.getInput(1).getOffset();
-        long size = op.getInput(2).getOffset();
-        return deref(op.getInput(0), mode, op.getOutput().getSize(), offset * size);
+        if (op.getInput(1).isConstant()
+            && !op.getInput(1).isAddress()
+            && op.getInput(2).isConstant()) {
+          int offset = (int) op.getInput(1).getOffset();
+          int size = (int) op.getInput(2).getOffset();
+          if (offset * size >= 0) {
+            return deref(op.getInput(0), mode, op.getOutput().getSize(), offset * size);
+          }
+        }
+        break;
     }
 
     return deref(op.getOutput(), mode, op.getOutput().getSize(), 0);
   }
 
+  private static Map<String, Map<Integer, String>> typeSize;
+
+  static {
+    typeSize = new HashMap<String, Map<Integer, String>>();
+    typeSize.put("bool", new HashMap<Integer, String>());
+    typeSize.put("int", new HashMap<Integer, String>());
+    typeSize.put("uint", new HashMap<Integer, String>());
+    typeSize.put("float", new HashMap<Integer, String>());
+
+    typeSize.get("bool").put(1, "bool");
+    typeSize.get("bool").put(4, "bool");
+    typeSize.get("bool").put(8, "bool");
+
+    typeSize.get("float").put(4, "float");
+    typeSize.get("float").put(8, "double");
+
+    typeSize.get("int").put(1, "int8");
+    typeSize.get("int").put(2, "int16");
+    typeSize.get("int").put(4, "int32");
+    typeSize.get("int").put(8, "int64");
+
+    typeSize.get("uint").put(1, "uint8");
+    typeSize.get("uint").put(2, "uint16");
+    typeSize.get("uint").put(4, "uint32");
+    typeSize.get("uint").put(8, "uint64");
+  }
+
+  static class PcodeOpType {
+    public String output;
+    public String[] inputs;
+
+    public PcodeOpType(String output, String... inputs) {
+      this.output = output;
+      this.inputs = inputs;
+    }
+
+    public void addConstraints(PcodeOp op, Set<String> constraints) {
+      if (output != null) {
+        String type = typeSize.get(output).get(op.getOutput().getSize());
+        constraints.add(type + " ⊑ " + varnode(op.getOutput()));
+      }
+
+      assert (inputs.length == op.getNumInputs());
+
+      for (int i = 0; i < inputs.length; i++) {
+        Varnode var = op.getInput(i);
+        String type = typeSize.get(inputs[i]).get(var.getSize());
+        constraints.add(varnode(var) + " ⊑ " + type);
+      }
+    }
+  }
+
+  private static Map<Integer, PcodeOpType> opTypes;
+
+  static {
+    opTypes = new HashMap<Integer, PcodeOpType>();
+    opTypes.put(PcodeOp.INT_EQUAL, new PcodeOpType("bool", "int", "int"));
+    opTypes.put(PcodeOp.INT_NOTEQUAL, new PcodeOpType("bool", "int", "int"));
+    opTypes.put(PcodeOp.INT_SLESS, new PcodeOpType("bool", "int", "int"));
+    opTypes.put(PcodeOp.INT_SLESSEQUAL, new PcodeOpType("bool", "int", "int"));
+    opTypes.put(PcodeOp.INT_LESS, new PcodeOpType("bool", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_LESSEQUAL, new PcodeOpType("bool", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_ZEXT, new PcodeOpType("uint", "int"));
+    opTypes.put(PcodeOp.INT_SEXT, new PcodeOpType("int", "int"));
+    opTypes.put(PcodeOp.INT_ADD, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_SUB, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_CARRY, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_SCARRY, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_SBORROW, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_2COMP, new PcodeOpType("uint", "uint"));
+    opTypes.put(PcodeOp.INT_NEGATE, new PcodeOpType("uint", "uint"));
+    opTypes.put(PcodeOp.INT_XOR, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_AND, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_OR, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_LEFT, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_RIGHT, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_SRIGHT, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_MULT, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_DIV, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_SDIV, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.INT_REM, new PcodeOpType("uint", "uint", "uint"));
+    opTypes.put(PcodeOp.INT_SREM, new PcodeOpType("int", "int", "int"));
+    opTypes.put(PcodeOp.BOOL_NEGATE, new PcodeOpType("bool", "bool"));
+    opTypes.put(PcodeOp.BOOL_XOR, new PcodeOpType("bool", "bool", "bool"));
+    opTypes.put(PcodeOp.BOOL_AND, new PcodeOpType("bool", "bool", "bool"));
+    opTypes.put(PcodeOp.BOOL_OR, new PcodeOpType("bool", "bool", "bool"));
+    opTypes.put(PcodeOp.FLOAT_EQUAL, new PcodeOpType("bool", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_NOTEQUAL, new PcodeOpType("bool", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_LESS, new PcodeOpType("bool", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_LESSEQUAL, new PcodeOpType("bool", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_NAN, new PcodeOpType("float"));
+    opTypes.put(PcodeOp.FLOAT_ADD, new PcodeOpType("float", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_DIV, new PcodeOpType("float", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_MULT, new PcodeOpType("float", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_SUB, new PcodeOpType("float", "float", "float"));
+    opTypes.put(PcodeOp.FLOAT_NEG, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_ABS, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_SQRT, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_INT2FLOAT, new PcodeOpType("int", "float"));
+    opTypes.put(PcodeOp.FLOAT_FLOAT2FLOAT, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_TRUNC, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_CEIL, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_FLOOR, new PcodeOpType("float", "float"));
+    opTypes.put(PcodeOp.FLOAT_ROUND, new PcodeOpType("float", "float"));
+  }
+
   /**
-   * Generate and store constraints for a given function
+   * Generate constraints for a given function
    *
    * @param func Function to generate constraints for
    * @param ifc Initialized decompiler interface
+   * @return Set of constraints generated for a function
    */
-  private void generateForFunction(Function func, DecompInterface ifc) {
+  private Set<String> generateForFunction(Function func, DecompInterface ifc) {
+    Set<String> funcConstraints = new HashSet<String>();
     Program program = func.getProgram();
     FunctionManager funcManager = program.getFunctionManager();
     DecompileResults res = ifc.decompileFunction(func, 300, null);
@@ -139,7 +286,7 @@ public class RetypdGenerate {
 
     if (highFunc == null) {
       Msg.warn(this, "Function " + func.getName() + " has no decompilation");
-      return;
+      return funcConstraints;
     }
 
     // Update parameters if we do not have any
@@ -149,7 +296,6 @@ public class RetypdGenerate {
       highParams.storeReturnToDatabase(true, SourceType.ANALYSIS);
     }
 
-    Set<String> funcConstraints = new HashSet<String>();
     Map<String, Integer> params = new HashMap<String, Integer>();
 
     // Load parameters, and if it has a user defined type, apply it
@@ -191,18 +337,6 @@ public class RetypdGenerate {
 
         // Handle specific opcodes
         switch (pcode.getOpcode()) {
-          case PcodeOp.FLOAT_ADD:
-          case PcodeOp.FLOAT_SUB:
-          case PcodeOp.FLOAT_MULT:
-          case PcodeOp.FLOAT_DIV:
-          case PcodeOp.FLOAT_NEG:
-          case PcodeOp.FLOAT_SQRT:
-            for (Varnode var : pcode.getInputs()) {
-              String type = var.getSize() == 8 ? "double" : "float";
-              funcConstraints.add(varnode(var) + " ⊑ " + type);
-              funcConstraints.add(varnode(var) + " ⊑ " + varnode(pcode.getOutput()));
-            }
-            break;
           case PcodeOp.RETURN:
             if (pcode.getNumInputs() == 2) {
               funcConstraints.add(varnode(pcode.getInput(1)) + " ⊑ " + functionOut(func));
@@ -237,39 +371,32 @@ public class RetypdGenerate {
             break;
           case PcodeOp.STORE:
             Varnode var = pcode.getInput(1);
-            VarnodeAST varAST = (VarnodeAST) var;
-            String dest;
-            if (varAST.getDef() != null) {
-              dest = derefLabel(varAST.getDef(), "store");
-            } else {
-              dest = deref(varAST, "store", var.getSize(), 0);
-            }
+            String dest = derefLabel(var, "store");
             funcConstraints.add(varnode(pcode.getInput(2)) + " ⊑ " + dest);
             break;
           case PcodeOp.LOAD:
             var = pcode.getInput(1);
-            varAST = (VarnodeAST) var;
-            String src;
-            if (varAST.getDef() != null) {
-              src = derefLabel(varAST.getDef(), "load");
-            } else {
-              src = deref(varAST, "load", var.getSize(), 0);
-            }
+            String src = derefLabel(var, "load");
             funcConstraints.add(src + " ⊑ " + varnode(pcode.getOutput()));
             break;
+          default:
+            if (opTypes.containsKey(pcode.getOpcode())) {
+              opTypes.get(pcode.getOpcode()).addConstraints(pcode, funcConstraints);
+            }
         }
       }
     }
 
-    constraints.put(func.getName(), funcConstraints);
+    return funcConstraints;
   }
 
   /**
    * Generate and store constraints for the currently loaded program
    *
+   * @return Map of function name to set of generated constraints for that
    * @throws DecompileException Thrown on failure to decompile a function
    */
-  private void generateForProgram() throws DecompileException {
+  private Map<String, Set<String>> generateForProgram() throws DecompileException {
     DecompileOptions options = new DecompileOptions();
     DecompInterface ifc = new DecompInterface();
     ifc.setOptions(options);
@@ -279,9 +406,13 @@ public class RetypdGenerate {
       throw new DecompileException("Decompiler", "Unable to initialize: " + ifc.getLastMessage());
     }
 
+    Map<String, Set<String>> constraints = new HashMap<String, Set<String>>();
     for (Function func : program.getFunctionManager().getFunctions(false)) {
-      generateForFunction(func, ifc);
+      Set<String> funcConstraints = generateForFunction(func, ifc);
+      constraints.put(function(func), funcConstraints);
     }
+
+    return constraints;
   }
 
   /**
@@ -304,39 +435,19 @@ public class RetypdGenerate {
     return callgraph;
   }
 
-  /**
-   * Create a mapping of strings that correspond ot function names formatted as they would appear in
-   * constraints to their original name such that they can be mapped to their original function in
-   * Ghidra
-   *
-   * @return The generated mapping
-   */
-  private Map<String, String> calculateNameMap() {
-    Map<String, String> nameMap = new HashMap<String, String>();
-
-    for (Function func : program.getFunctionManager().getFunctions(false)) {
-      nameMap.put(function(func), func.getName());
-    }
-
-    return nameMap;
-  }
-
   /** Results class used for generating the JSON file */
   class RetypdResults {
     private String language;
     private Map<String, Set<String>> constraints;
     private Map<String, Set<String>> callgraph;
-    private Map<String, String> nameMap;
 
     public RetypdResults(
         Language language,
         Map<String, Set<String>> constraints,
-        Map<String, Set<String>> callgraph,
-        Map<String, String> nameMap) {
+        Map<String, Set<String>> callgraph) {
       this.language = language.toString();
       this.constraints = constraints;
       this.callgraph = callgraph;
-      this.nameMap = nameMap;
     }
   }
 
@@ -347,14 +458,10 @@ public class RetypdGenerate {
    * @throws DecompileException Thrown on failure to decompile a function
    */
   public String getJSON() throws DecompileException {
-    if (constraints.isEmpty()) {
-      generateForProgram();
-    }
-
     Gson gson = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
     RetypdResults res =
-        new RetypdResults(
-            program.getLanguage(), constraints, calculateCallgraph(), calculateNameMap());
+        new RetypdResults(program.getLanguage(), generateForProgram(), calculateCallgraph());
+
     return gson.toJson(res);
   }
 }
