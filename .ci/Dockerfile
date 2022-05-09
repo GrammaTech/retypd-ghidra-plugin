@@ -57,10 +57,6 @@ RUN make && make install
 
 FROM base as interactive
 
-# Interactive utilities
-RUN apt-get -y update \
-    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
-        vim ruby ssh firefox ack meld
 RUN python3.8 -m venv venv
 RUN . ./venv/bin/activate
 

@@ -31,7 +31,13 @@ docker build -t retypd-image --target interactive -f ./.ci/Dockerfile .
 and run with:
 
 ```bash
-docker run -it retypd-image
+xhost +si:localuser:root
+docker run -it --privileged \
+    --network=host \
+    -e DISPLAY \
+    -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+    retypd-image \
+    bash
 ```
 
 ## Manual Install

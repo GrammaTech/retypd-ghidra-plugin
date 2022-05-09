@@ -70,7 +70,7 @@ public class RetypdGenerate {
    * @param func Function whose name to translate
    * @return Type variable for use in constraints
    */
-  public static String function(Function func) {
+  public static String fmtFunctionName(Function func) {
     String name = func.getSymbol().getName();
     return name.replace(".", "_").replace("@", "_");
   }
@@ -83,7 +83,7 @@ public class RetypdGenerate {
    * @return Type path for use in constraints
    */
   private static String functionIn(Function func, int num) {
-    return function(func) + ".in_" + num;
+    return fmtFunctionName(func) + ".in_" + num;
   }
 
   /**
@@ -93,7 +93,7 @@ public class RetypdGenerate {
    * @return Type path for use in constraints
    */
   private static String functionOut(Function func) {
-    return function(func) + ".out";
+    return fmtFunctionName(func) + ".out";
   }
 
   /**
@@ -409,7 +409,7 @@ public class RetypdGenerate {
     Map<String, Set<String>> constraints = new HashMap<String, Set<String>>();
     for (Function func : program.getFunctionManager().getFunctions(false)) {
       Set<String> funcConstraints = generateForFunction(func, ifc);
-      constraints.put(function(func), funcConstraints);
+      constraints.put(fmtFunctionName(func), funcConstraints);
     }
 
     return constraints;
@@ -427,9 +427,9 @@ public class RetypdGenerate {
     for (Function func : program.getFunctionManager().getFunctions(false)) {
       Set<String> found = new HashSet<String>();
       for (Function callee : func.getCalledFunctions(TaskMonitor.DUMMY)) {
-        found.add(function(callee));
+        found.add(fmtFunctionName(callee));
       }
-      callgraph.put(function(func), found);
+      callgraph.put(fmtFunctionName(func), found);
     }
 
     return callgraph;
