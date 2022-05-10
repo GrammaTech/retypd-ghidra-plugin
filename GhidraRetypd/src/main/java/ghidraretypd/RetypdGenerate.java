@@ -347,6 +347,11 @@ public class RetypdGenerate {
           case PcodeOp.CAST:
             funcConstraints.add(varnode(pcode.getInput(0)) + " ⊑ " + varnode(pcode.getOutput()));
             break;
+          case PcodeOp.MULTIEQUAL:
+            for (int i = 0; i < pcode.getNumInputs(); i++) {
+              funcConstraints.add(varnode(pcode.getInput(i)) + " ⊑ " + varnode(pcode.getOutput()));
+            }
+            break;
           case PcodeOp.CALL:
             Varnode addr = pcode.getInput(0);
             if (addr.isAddress()) {
