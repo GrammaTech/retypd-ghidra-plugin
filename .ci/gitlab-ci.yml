@@ -1,0 +1,78 @@
+variables:
+  IMAGE_NAME: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG"
+  EXTRA_INDEX_URL: https://__token__:$GL_PKG_API_TOKEN@git.grammatech.com/api/v4/projects/1587/packages/pypi/simple
+  LANG: "en_US.UTF-8"
+  LC_CTYPE: "en_US.UTF-8"
+  LC_ALL: "en_US.UTF-8"
+
+workflow:
+  rules:
+    # If no 'rules' are explicitly set for jobs below, they will automatically
+    # run each time this pipeline runs (merge, commits, or schedules)
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+.default-runner: &default-runner kubernetes
+
+stages:
+  - build-ci-pipeline
+  - test-ci-pipeline
+  - export
+
+# Use kaniko to build docker image.
+#  https://docs.gitlab.com/ee/ci/docker/using_kaniko.html
+#  https://github.com/GoogleContainerTools/kaniko
+build-ci-pipeline:
+  stage: build-ci-pipeline
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]  # Override the image's entrypoint so we can specify our own script
+  script:
+    # Configure authentication credentials
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+    # Run the kaniko executor, which will build our image (using a cache if available) and push it to the CI_REGISTRY.
+    # Downstream jobs will leverage this image for testing and exporting.
+    - >-
+      /kaniko/executor
+      --context=$CI_PROJECT_DIR
+      --dockerfile=$CI_PROJECT_DIR/.ci/Dockerfile
+      --destination=$IMAGE_NAME
+      --target=base
+  tags:
+    - *default-runner
+
+test-ci-pipeline:
+  stage: test-ci-pipeline
+  image: $IMAGE_NAME
+  tags:
+    - *default-runner
+  variables:
+    GRADLE_OPTS: "-Dfile.encoding=utf-8"
+    JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8"
+  script:
+    - echo "using docker image $IMAGE_NAME"
+    - python3.8 -m venv venv
+    - source venv/bin/activate
+    - python3.8 -m pip install --pre --extra-index-url=$EXTRA_INDEX_URL -e .
+    - make tests
+  artifacts:
+    reports:
+      junit: GhidraRetypd/build/test-results/test/TEST-TestRetypd.xml
+
+# Export to our internal PyPi repository
+export_internal:
+  stage: export
+  image: python:3.8-slim
+  script:
+    - pip install twine requests pkginfo
+    - python3 setup.py bdist_wheel --dist-dir=$CI_PROJECT_DIR/dist
+    - VERSION=$(python3 -c "from imp import load_source; pkginfo = load_source('pkginfo.version', 'ghidra_retypd_provider/version.py'); print(pkginfo.__version__)")
+    # this job is not using $CI_JOB_TOKEN because it only has read access
+    # https://gitlab.com/gitlab-org/gitlab/-/issues/35067
+    # this job is also not using $CI_DEPLOY_USER and $CI_DEPLOY_PASSWORD because it only has write access
+    - ls $CI_PROJECT_DIR/dist/*.whl | xargs $CI_PROJECT_DIR/delete_remote_packages.py $GL_PKG_API_TOKEN
+    - sed "s/password = <access token>/password = $GL_PKG_API_TOKEN/" $CI_PROJECT_DIR/.pypirc > ~/.pypirc
+    - python3 -m twine upload --verbose --repository repypi $CI_PROJECT_DIR/dist/*.whl
+  tags:
+    - kubernetes
+  rules:

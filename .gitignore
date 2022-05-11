@@ -1,0 +1,25 @@
+*.pyc
+*~
+*.egg-info
+__pycache__/
+_build/
+build/
+dist/
+*.eggs
+MANIFEST
+venv/
+GhidraRetypd/lib/
+GhidraRetypd/build/
+GhidraRetypd/bin/
+GhidraRetypd/log.txt
+GhidraRetypd/.classpath
+GhidraRetypd/.gradle
+.vscode/
+*.zip
+
+# Delete test artifacts
+*.gpr
+*.rep/
+*.lock
+*.lock~
+GhidraRetypd/src/test/resources/test-structs-hf
