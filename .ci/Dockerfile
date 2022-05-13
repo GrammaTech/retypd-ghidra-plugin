@@ -43,13 +43,13 @@ RUN apt-get -y update \
 COPY . /ghidra_retypd
 WORKDIR /ghidra_retypd
 
+ENV PATH="/ghidra_retypd/util/:/ghidra_retypd/third-party/gradle/bin:${PATH}"
 # get ghidra
 RUN .ci/get_ghidra.sh
 
 # Ghidra environment variables
 ENV GHIDRA_HOME=/ghidra_retypd/third-party/ghidra/
 ENV GHIDRA_INSTALL_DIR=/ghidra_retypd/third-party/ghidra/
-ENV PATH="/ghidra_retypd/util/:/ghidra_retypd/third-party/gradle/bin:${PATH}"
 ENV CLASSPATH=.:$GHIDRA_HOME/support/ghidra.jar
 
 # Install the extension
