@@ -113,7 +113,6 @@ def infer_types(json_in: Path, function: Optional[str] = None) -> List[CType]:
         max_path_length=15,
         max_paths_per_root=5000,
         max_total_paths=100000,
-        keep_output_constraints=False,
         precise_globals=False,
     )
     solver = Solver(program, config, verbose=LogLevel.DEBUG)
