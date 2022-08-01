@@ -16,22 +16,38 @@ package ghidraretypd;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import ghidra.program.model.data.BooleanDataType;
+import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.data.Category;
 import ghidra.program.model.data.CategoryPath;
+import ghidra.program.model.data.CharDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DoubleDataType;
 import ghidra.program.model.data.FloatDataType;
+import ghidra.program.model.data.FunctionDefinitionDataType;
 import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.LongDataType;
+import ghidra.program.model.data.ParameterDefinition;
+import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.ShortDataType;
+import ghidra.program.model.data.SignedByteDataType;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.Undefined1DataType;
+import ghidra.program.model.data.Undefined2DataType;
+import ghidra.program.model.data.Undefined4DataType;
+import ghidra.program.model.data.Undefined8DataType;
 import ghidra.program.model.data.UnsignedIntegerDataType;
+import ghidra.program.model.data.UnsignedLongDataType;
+import ghidra.program.model.data.UnsignedShortDataType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.Msg;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 import java.io.IOException;
@@ -61,6 +77,65 @@ public class RetypdTypes {
     public long offset;
   }
 
+  /** DataTypeRecord represents a pair of (Type, Size) information */
+  static class DataTypeRecord {
+    public int size;
+    public DataType dataType;
+
+    DataTypeRecord(int size, DataType dataType) {
+      this.size = size;
+      this.dataType = dataType;
+    }
+
+    /**
+     * Get the size of the DataType in this record
+     *
+     * @return Size of the datatype
+     */
+    public int getSize() {
+      if (size != 0) {
+        return size;
+      }
+
+      return dataType.getLength();
+    }
+  }
+  ;
+
+  static Map<String, DataTypeRecord> retypdToDataType;
+
+  static {
+    retypdToDataType = new HashMap<String, DataTypeRecord>();
+    retypdToDataType.put("int8_t", new DataTypeRecord(1, SignedByteDataType.dataType));
+    retypdToDataType.put("int16_t", new DataTypeRecord(2, ShortDataType.dataType));
+    retypdToDataType.put("int32_t", new DataTypeRecord(4, IntegerDataType.dataType));
+    retypdToDataType.put("int64_t", new DataTypeRecord(8, LongDataType.dataType));
+    retypdToDataType.put("int", new DataTypeRecord(0, IntegerDataType.dataType));
+
+    retypdToDataType.put("uint8_t", new DataTypeRecord(1, ByteDataType.dataType));
+    retypdToDataType.put("uint16_t", new DataTypeRecord(2, UnsignedShortDataType.dataType));
+    retypdToDataType.put("uint32_t", new DataTypeRecord(4, UnsignedIntegerDataType.dataType));
+    retypdToDataType.put("uint64_t", new DataTypeRecord(8, UnsignedLongDataType.dataType));
+    retypdToDataType.put("uint", new DataTypeRecord(0, UnsignedIntegerDataType.dataType));
+
+    retypdToDataType.put("char1_t", new DataTypeRecord(1, CharDataType.dataType));
+    retypdToDataType.put("char2_t", new DataTypeRecord(2, CharDataType.dataType));
+    retypdToDataType.put("char4_t", new DataTypeRecord(4, CharDataType.dataType));
+    retypdToDataType.put("char8_t", new DataTypeRecord(8, CharDataType.dataType));
+    retypdToDataType.put("char", new DataTypeRecord(0, CharDataType.dataType));
+
+    retypdToDataType.put("float4_t", new DataTypeRecord(4, FloatDataType.dataType));
+    retypdToDataType.put("float8_t", new DataTypeRecord(8, DoubleDataType.dataType));
+
+    retypdToDataType.put("bool", new DataTypeRecord(0, BooleanDataType.dataType));
+    retypdToDataType.put("bool4_t", new DataTypeRecord(4, BooleanDataType.dataType));
+
+    retypdToDataType.put("char1_t[1]", new DataTypeRecord(1, Undefined1DataType.dataType));
+    retypdToDataType.put("char1_t[2]", new DataTypeRecord(2, Undefined2DataType.dataType));
+    retypdToDataType.put("char1_t[4]", new DataTypeRecord(4, Undefined4DataType.dataType));
+    retypdToDataType.put("char1_t[8]", new DataTypeRecord(8, Undefined8DataType.dataType));
+  }
+
   /**
    * ComplexType can represent a "function" datatype or "struct" datatype depending on the value of
    * its field `type`. This facilitates deserializing the type information into into a simple list
@@ -82,23 +157,23 @@ public class RetypdTypes {
 
     /** Compute the length of the struct */
     long length(Map<String, ComplexType> allTypes) {
-      StructField lastField = null;
+      long maxLength = 1;
+
       // Find the last field.
       for (StructField field : fields) {
-        if (lastField == null || lastField.offset < field.offset) {
-          lastField = field;
+        long fieldLength = 8;
+
+        // Compute the length of the last field.
+        if (retypdToDataType.containsKey(field.type)) {
+          fieldLength = retypdToDataType.get(field.type).getSize();
+        } else if (allTypes.containsKey(field.type)) {
+          fieldLength = allTypes.get(field.type).length(allTypes);
         }
+
+        maxLength = Math.max(maxLength, field.offset + fieldLength);
       }
-      // Compute the length of the last field.
-      long lastFieldLength = 4;
-      if (lastField.type.equals("float4_t")) {
-        lastFieldLength = 4;
-      } else if (lastField.type.equals("float8_t")) {
-        lastFieldLength = 8;
-      } else if (allTypes.containsKey(lastField.type)) {
-        lastFieldLength = allTypes.get(lastField.type).length(allTypes);
-      }
-      return lastField.offset + lastFieldLength;
+
+      return maxLength;
     }
   }
 
@@ -137,48 +212,29 @@ public class RetypdTypes {
    * @param datatypeMap: A map that contains the collection of struct datatypes keyed by their name.
    * @return The DataType corresponding to the name or null if not found.
    */
-  public static DataType getDataType(
-      String datatypeName, Map<String, StructureDataType> datatypeMap) {
+  public static DataTypeRecord getDataType(String datatypeName, Map<String, DataType> datatypeMap) {
 
-    if (datatypeName.equals("int32_t")) {
-      return IntegerDataType.dataType;
-    }
-    if (datatypeName.equals("uint32_t")) {
-      return UnsignedIntegerDataType.dataType;
-    }
-    if (datatypeName.equals("float4_t")) {
-      return FloatDataType.dataType;
-    }
-    if (datatypeName.equals("float8_t")) {
-      return DoubleDataType.dataType;
-    }
-    if (datatypeName.startsWith("struct ")) {
-      String typeName = datatypeName.substring("struct ".length());
-      Boolean pointer = false;
-      if (datatypeName.endsWith("*")) {
-        typeName = typeName.substring(0, typeName.length() - 1);
-        pointer = true;
+    if (datatypeName.endsWith("*")) {
+      String typeName = datatypeName.substring(0, datatypeName.length() - 1);
+      DataTypeRecord nested = getDataType(typeName, datatypeMap);
+      return new DataTypeRecord(0, new PointerDataType(nested.dataType));
+    } else if (retypdToDataType.containsKey(datatypeName)) {
+      return retypdToDataType.get(datatypeName);
+    } else if (datatypeName.startsWith("struct ") || datatypeName.startsWith("function_")) {
+      String typeName = null;
+
+      if (datatypeName.startsWith("struct ")) {
+        typeName = datatypeName.substring("struct ".length());
+      } else if (datatypeName.startsWith("function_")) {
+        typeName = datatypeName.substring("function_".length());
       }
+
       DataType datatype = datatypeMap.get(typeName);
-      if (pointer) {
-        datatype = new PointerDataType(datatype);
-      }
-      return datatype;
+      return new DataTypeRecord(0, datatype);
     }
-    return null;
-  }
 
-  /** Compute the length of a datatype. */
-  public static int getDataTypeLength(DataType dataType) {
-    if (dataType instanceof DoubleDataType) {
-      return 8;
-    }
-    if (dataType instanceof StructureDataType) {
-      StructureDataType struct = (StructureDataType) dataType;
-      return struct.getLength();
-    }
-    // float, int32, and uint32.
-    return 4;
+    Msg.warn(null, "Unknown type name " + datatypeName);
+    return null;
   }
 
   /** Populate the fields of `src` int the `dest` structure datatype */
@@ -215,7 +271,7 @@ public class RetypdTypes {
   public void updateFunctions(
       FunctionManager funcMgr, DataTypeManager datatypeMgr, PrintWriter out) {
 
-    Map<String, StructureDataType> datatypeMap = new HashMap<String, StructureDataType>();
+    Map<String, DataType> datatypeMap = new HashMap<String, DataType>();
 
     // Remove previous retypd types
     Category rootCategory = datatypeMgr.getCategory(new CategoryPath("/"));
@@ -223,32 +279,55 @@ public class RetypdTypes {
     // Create datatypes
     for (Map.Entry<String, ComplexType> typePair : types.entrySet()) {
       ComplexType type = typePair.getValue();
-      if (!type.type.equals("struct")) {
-        continue;
+      Msg.info(this, "Generating " + type.type + " for " + type.name);
+      if (type.type.equals("struct")) {
+        StructureDataType struct =
+            new StructureDataType(
+                new CategoryPath("/retypd"), type.name, (int) type.length(types), datatypeMgr);
+        datatypeMap.put(typePair.getKey(), struct);
+      } else if (type.type.equals("function")) {
+        FunctionDefinitionDataType func =
+            new FunctionDefinitionDataType(new CategoryPath("/retypd"), type.name, datatypeMgr);
+        datatypeMap.put(typePair.getKey(), func);
       }
-      StructureDataType struct =
-          new StructureDataType(
-              new CategoryPath("/retypd"), type.name, (int) type.length(types), datatypeMgr);
-      datatypeMap.put(typePair.getKey(), struct);
     }
 
     // Populate fields
     for (Map.Entry<String, ComplexType> typePair : types.entrySet()) {
       ComplexType type = typePair.getValue();
-      if (!type.type.equals("struct")) {
-        continue;
-      }
-      StructureDataType struct = datatypeMap.get(typePair.getKey());
-      for (StructField field : type.fields) {
-        DataType fieldDataType = getDataType(field.type, datatypeMap);
-        if (fieldDataType != null) {
-          struct.replaceAtOffset(
-              (int) field.offset,
-              fieldDataType,
-              (int) getDataTypeLength(fieldDataType),
-              field.name,
-              "");
+      if (type.type.equals("struct")) {
+        StructureDataType struct = (StructureDataType) datatypeMap.get(typePair.getKey());
+        for (StructField field : type.fields) {
+          DataTypeRecord fieldDataType = getDataType(field.type, datatypeMap);
+
+          if (fieldDataType != null) {
+            struct.replaceAtOffset(
+                (int) field.offset,
+                fieldDataType.dataType,
+                fieldDataType.getSize(),
+                field.name,
+                "");
+          }
         }
+      } else if (type.type.equals("function")) {
+        FunctionDefinitionDataType func =
+            (FunctionDefinitionDataType) datatypeMap.get(typePair.getKey());
+
+        if (!type.ret.equals("None")) {
+          func.setReturnType(getDataType(type.ret, datatypeMap).dataType);
+        }
+
+        ParameterDefinition[] argTypes = new ParameterDefinition[type.params.size()];
+
+        for (Param arg : type.params) {
+          DataTypeRecord dataType = getDataType(arg.type, datatypeMap);
+
+          ParameterDefinitionImpl param =
+              new ParameterDefinitionImpl("arg_" + arg.index, dataType.dataType, "");
+          argTypes[arg.index] = param;
+        }
+
+        func.setArguments(argTypes);
       }
     }
 
@@ -265,7 +344,7 @@ public class RetypdTypes {
           if (param.index >= originalParams.length) {
             continue;
           }
-          DataType paramDataType = getDataType(param.type, datatypeMap);
+          DataTypeRecord paramDataType = getDataType(param.type, datatypeMap);
           if (paramDataType != null) {
             try {
               // We cannot change the type of autoparameters (this)
@@ -273,15 +352,16 @@ public class RetypdTypes {
               if (originalParams[param.index].isAutoParameter()) {
                 DataType thisParam = originalParams[param.index].getDataType();
                 if (thisParam instanceof PointerDataType
-                    && paramDataType instanceof PointerDataType) {
+                    && paramDataType.dataType instanceof PointerDataType) {
                   DataType thisObj = ((PointerDataType) thisParam).getDataType();
-                  DataType paramObj = ((PointerDataType) paramDataType).getDataType();
+                  DataType paramObj = ((PointerDataType) paramDataType.dataType).getDataType();
                   if (thisObj instanceof Structure && paramObj instanceof Structure) {
                     updateTypeBasedOnType((Structure) thisObj, (Structure) paramObj, out);
                   }
                 }
               } else {
-                originalParams[param.index].setDataType(paramDataType, SourceType.IMPORTED);
+                originalParams[param.index].setDataType(
+                    paramDataType.dataType, SourceType.IMPORTED);
               }
             } catch (InvalidInputException e) {
               out.print("Failed to update param " + param.index + ": ");
@@ -291,10 +371,10 @@ public class RetypdTypes {
         }
         // Return type
         if (!typ.ret.equals("None")) {
-          DataType retDataType = getDataType(typ.ret, datatypeMap);
+          DataTypeRecord retDataType = getDataType(typ.ret, datatypeMap);
           Parameter ret = func.getReturn();
           try {
-            ret.setDataType(retDataType, SourceType.IMPORTED);
+            ret.setDataType(retDataType.dataType, SourceType.IMPORTED);
           } catch (InvalidInputException e) {
             out.println("Failed to update return type");
             out.println(e);
