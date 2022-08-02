@@ -317,6 +317,16 @@ public class RetypdTypes {
           func.setReturnType(getDataType(type.ret, datatypeMap).dataType);
         }
 
+        int maxIndex = 0;
+
+        for (Param arg : type.params) {
+          maxIndex = max(maxIndex, arg.index);
+        }
+
+        if (maxIndex == 0) {
+          continue;
+        }
+
         ParameterDefinition[] argTypes = new ParameterDefinition[type.params.size()];
 
         for (Param arg : type.params) {
