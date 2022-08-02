@@ -320,7 +320,7 @@ public class RetypdTypes {
         int maxIndex = 0;
 
         for (Param arg : type.params) {
-          maxIndex = max(maxIndex, arg.index);
+          maxIndex = Math.max(maxIndex, arg.index);
         }
 
         if (maxIndex == 0) {
