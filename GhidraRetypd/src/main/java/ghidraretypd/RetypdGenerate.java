@@ -128,8 +128,22 @@ public class RetypdGenerate {
    * @param offset The offset into the varnode that is being dereferenced
    * @return Type path for use in constraints
    */
-  private static String deref(Varnode src, String mode, long size, long offset) {
-    return varnode(src) + "." + mode + ".σ" + size + "@" + offset;
+  private static String deref(Varnode src, String mode, long size, int offset) {
+    String offsetStr;
+
+    switch (offset) {
+      case -1:
+        offsetStr = "0*[nobound]";
+        break;
+      case -2:
+        offsetStr = "0*[nullterm]";
+        break;
+      default:
+        offsetStr = offset + "";
+        break;
+    }
+
+    return varnode(src) + "." + mode + ".σ" + size + "@" + offsetStr;
   }
 
   /**
@@ -169,6 +183,8 @@ public class RetypdGenerate {
           if (offset >= 0) {
             return deref(op.getInput(0), mode, size, offset);
           }
+        } else {
+          return deref(op.getInput(0), mode, size, -1);
         }
         break;
       case PcodeOp.PTRADD:
@@ -367,13 +383,14 @@ public class RetypdGenerate {
           VarnodeAST varAST = (VarnodeAST) var;
           HighVariable highVar = varAST.getHigh();
 
+          // Reason about string constants
           if (highVar != null && highVar instanceof HighConstant) {
             HighConstant highConst = (HighConstant) highVar;
             DataType highConstDt = highConst.getDataType();
 
             if (highConstDt.toString().equals("char *")) {
-              funcConstraints.add(varnode(var) + ".load.σ1@0*[nullterm] ⊑ int");
-              funcConstraints.add("int ⊑ " + varnode(var) + ".store.σ1@0*[nullterm]");
+              funcConstraints.add(deref(var, "load", 1, -2) + " ⊑ int");
+              funcConstraints.add("int ⊑ " + deref(var, "store", 1, -2));
             }
           }
 

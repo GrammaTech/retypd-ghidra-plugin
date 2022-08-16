@@ -130,6 +130,7 @@ public class RetypdTypes {
     retypdToDataType.put("bool", new DataTypeRecord(0, BooleanDataType.dataType));
     retypdToDataType.put("bool4_t", new DataTypeRecord(4, BooleanDataType.dataType));
 
+    retypdToDataType.put("char1_t[0]", new DataTypeRecord(0, Undefined1DataType.dataType));
     retypdToDataType.put("char1_t[1]", new DataTypeRecord(1, Undefined1DataType.dataType));
     retypdToDataType.put("char1_t[2]", new DataTypeRecord(2, Undefined2DataType.dataType));
     retypdToDataType.put("char1_t[4]", new DataTypeRecord(4, Undefined4DataType.dataType));
@@ -279,7 +280,6 @@ public class RetypdTypes {
     // Create datatypes
     for (Map.Entry<String, ComplexType> typePair : types.entrySet()) {
       ComplexType type = typePair.getValue();
-      Msg.info(this, "Generating " + type.type + " for " + type.name);
       if (type.type.equals("struct")) {
         StructureDataType struct =
             new StructureDataType(
@@ -327,7 +327,7 @@ public class RetypdTypes {
           continue;
         }
 
-        ParameterDefinition[] argTypes = new ParameterDefinition[type.params.size()];
+        ParameterDefinition[] argTypes = new ParameterDefinition[maxIndex + 1];
 
         for (Param arg : type.params) {
           DataTypeRecord dataType = getDataType(arg.type, datatypeMap);
@@ -335,6 +335,14 @@ public class RetypdTypes {
           ParameterDefinitionImpl param =
               new ParameterDefinitionImpl("arg_" + arg.index, dataType.dataType, "");
           argTypes[arg.index] = param;
+        }
+
+        for (int i = 0; i < maxIndex; i++) {
+          if (argTypes[i] == null) {
+            ParameterDefinitionImpl param =
+                new ParameterDefinitionImpl("arg_" + i, new Undefined4DataType(datatypeMgr), "");
+            argTypes[i] = param;
+          }
         }
 
         func.setArguments(argTypes);
