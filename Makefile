@@ -29,7 +29,7 @@ install: GhidraRetypd.zip
 	mkdir -p $(EXTENSION_DIR) && unzip -uo GhidraRetypd.zip -d $(EXTENSION_DIR)
 
 clean:
-	rm -rf GhidraRetypd.zip GhidraRetypd/build $(TESTDIR)/resources/test-structs
+	rm -rf GhidraRetypd.zip GhidraRetypd/build $(TESTDIR)/resources/test-structs-hf
 
 run: install
 	$(GHIDRA_INSTALL_DIR)/ghidraDebug
