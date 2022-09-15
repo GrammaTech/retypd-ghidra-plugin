@@ -255,7 +255,8 @@ public class RetypdTypes {
     // Update function prototypes
     for (Function func : funcMgr.getFunctions(true)) {
       String name = RetypdGenerate.fmtFunctionName(func);
-      if (types.containsKey(name)) {
+      SourceType signatureSource = func.getSignatureSource();
+      if (types.containsKey(name) && signatureSource != SourceType.IMPORTED) {
         out.println("Replacing type of " + name);
         ComplexType typ = types.get(name);
         Parameter[] originalParams = func.getParameters();
