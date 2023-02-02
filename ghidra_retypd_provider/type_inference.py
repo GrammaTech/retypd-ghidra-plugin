@@ -109,7 +109,7 @@ def infer_types(json_in: Path, function: Optional[str] = None) -> List[CType]:
 
     """
     language, program = constraints_from_json(json_in)
-    config = SolverConfig(use_dfa_simplification=True)
+    config = SolverConfig(top_down_propagation=True)
     solver = Solver(program, config, verbose=LogLevel.DEBUG)
     _, sketches = solver()
     for f, sk in sketches.items():
