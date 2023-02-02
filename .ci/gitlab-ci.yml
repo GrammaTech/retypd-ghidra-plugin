@@ -12,7 +12,7 @@ workflow:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "schedule"
 
-.default-runner: &default-runner kubernetes
+.default-runner: &default-runner shared
 
 stages:
   - build-ci-pipeline
@@ -74,5 +74,5 @@ export_internal:
     - sed "s/password = <access token>/password = $GL_PKG_API_TOKEN/" $CI_PROJECT_DIR/.pypirc > ~/.pypirc
     - python3 -m twine upload --verbose --repository repypi $CI_PROJECT_DIR/dist/*.whl
   tags:
-    - kubernetes
+    - shared
   rules:
