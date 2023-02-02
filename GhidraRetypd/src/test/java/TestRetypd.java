@@ -201,9 +201,9 @@ public class TestRetypd {
 
   static {
     prototypeMap = new HashMap<String, String>();
-    prototypeMap.put("foo1", "undefined foo1(float param_1, struct_2 * param_2)");
-    prototypeMap.put("foo2", "undefined foo2(float param_1, float param_2, struct_1 * param_3)");
-    prototypeMap.put("foo3", "float foo3(float param_1, struct_0 * param_2)");
+    prototypeMap.put("foo1", "undefined1 foo1(struct_2 * param_1, float param_2)");
+    prototypeMap.put("foo2", "undefined1 foo2(struct_1 * param_1, float param_2, float param_3)");
+    prototypeMap.put("foo3", "float foo3(struct_0 * param_1, float param_2)");
   }
 
   @Test
