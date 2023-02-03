@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as base
+FROM ubuntu:20.04 as base
 
 # Install pip3 to get access to apt-select
 RUN apt-get -y update \
@@ -17,7 +17,8 @@ RUN apt-get -y update \
         build-essential \
         cmake \
         curl \
-        default-jdk \
+        openjdk-17-jdk \
+        openjdk-17-jre \
         gcc-arm-linux-gnueabi \
         g++-arm-linux-gnueabi \
         gcc-arm-linux-gnueabihf \
@@ -25,9 +26,6 @@ RUN apt-get -y update \
         git \
         libc6-dev-armel-cross \
         libcairo2 \
-        python3.8 \
-        python3.8-dev \
-        python3.8-venv \
         python3-venv \
         python3-pip \
         python3-setuptools \
@@ -36,7 +34,7 @@ RUN apt-get -y update \
         wget \
         zip \
     && apt-get clean \
-    && python3.8 -m pip install --upgrade \
+    && python3 -m pip install --upgrade \
         pip \
         setuptools
 
@@ -57,14 +55,14 @@ RUN make && make install
 
 FROM base as interactive
 
-RUN python3.8 -m venv venv
+RUN python3 -m venv venv
 RUN . ./venv/bin/activate
 
 # Install retypd into the virtual environment
 RUN git clone https://github.com/GrammaTech/retypd.git /retypd/
 WORKDIR /retypd
-RUN python3.8 -m pip install .
+RUN python3 -m pip install .
 
 # Install ghidra_retypd into the virutal environment
 WORKDIR /ghidra_retypd
-RUN python3.8 -m pip install .
+RUN python3 -m pip install .

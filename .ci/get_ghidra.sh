@@ -1,9 +1,11 @@
 #!/bin/bash
+set -x
+
 mkdir -p third-party
 
 
 # Installs gradle, which is needed for extensions
-GRADLE=gradle-7.1.1-bin.zip
+GRADLE=gradle-7.3-bin.zip
 
 # Get gradle from u4
 wget -nv https://services.gradle.org/distributions/$GRADLE
@@ -19,7 +21,9 @@ popd
 rm $GRADLE
 
 # Build ghidra from GrammaTech fork
+# Ghidra_10.2.2 seems to give problems when decompiling with ifc.toggleParamMeasures(true);
 git clone https://github.com/GrammaTech/ghidra.git ghidra_build
+#git clone https://github.com/NationalSecurityAgency/ghidra.git --branch Ghidra_10.2.2_build ghidra_build
 pushd ghidra_build
 
 gradle -I gradle/support/fetchDependencies.gradle init

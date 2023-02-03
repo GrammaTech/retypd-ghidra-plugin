@@ -20,11 +20,13 @@ import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileException;
 import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.program.model.data.DataType;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.pcode.HighConstant;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.HighParamID;
 import ghidra.program.model.pcode.HighVariable;
@@ -87,6 +89,17 @@ public class RetypdGenerate {
   }
 
   /**
+   * Translate a varnode function input to a string for constraint generation
+   *
+   * @param var Varnode to translate
+   * @param num Which number of input to translate
+   * @return Type path for use in constraints
+   */
+  private static String varIn(Varnode var, int num) {
+    return varnode(var) + ".in_" + num;
+  }
+
+  /**
    * Translate a function output to a string for constraint generation
    *
    * @param func Function to translate
@@ -94,6 +107,16 @@ public class RetypdGenerate {
    */
   private static String functionOut(Function func) {
     return fmtFunctionName(func) + ".out";
+  }
+
+  /**
+   * Translate a function output to a string for constraint generation
+   *
+   * @param var Varnode to translate
+   * @return Type path for use in constraints
+   */
+  private static String varOut(Varnode var) {
+    return varnode(var) + ".out";
   }
 
   /**
@@ -105,8 +128,22 @@ public class RetypdGenerate {
    * @param offset The offset into the varnode that is being dereferenced
    * @return Type path for use in constraints
    */
-  private static String deref(Varnode src, String mode, long size, long offset) {
-    return varnode(src) + "." + mode + ".σ" + size + "@" + offset;
+  private static String deref(Varnode src, String mode, long size, int offset) {
+    String offsetStr;
+
+    switch (offset) {
+      case -1:
+        offsetStr = "0*[nobound]";
+        break;
+      case -2:
+        offsetStr = "0*[nullterm]";
+        break;
+      default:
+        offsetStr = offset + "";
+        break;
+    }
+
+    return varnode(src) + "." + mode + ".σ" + size + "@" + offsetStr;
   }
 
   /**
@@ -116,20 +153,20 @@ public class RetypdGenerate {
    * @param mode `store` or `load` for Pcode STORE/LOAD respectively
    * @return Type path for use in constraints
    */
-  private String derefLabel(Varnode orig, String mode) {
+  private String derefLabel(Varnode orig, int size, String mode) {
     PcodeOp op = orig.getDef();
 
     if (op == null) {
-      return deref(orig, mode, orig.getSize(), 0);
+      return deref(orig, mode, size, 0);
     }
 
     switch (op.getOpcode()) {
       case PcodeOp.CAST:
         VarnodeAST castArg = (VarnodeAST) op.getInput(0);
         if (castArg.getDef() != null) {
-          return derefLabel(castArg, mode);
+          return derefLabel(castArg, size, mode);
         } else {
-          return deref(castArg, mode, op.getOutput().getSize(), 0);
+          return deref(castArg, mode, size, 0);
         }
       case PcodeOp.INT_ADD:
         if (op.getInput(0).isConstant() && !op.getInput(1).isConstant()) {
@@ -144,8 +181,10 @@ public class RetypdGenerate {
         if (op.getInput(1).isConstant() && !op.getInput(1).isAddress()) {
           int offset = (int) op.getInput(1).getOffset();
           if (offset >= 0) {
-            return deref(op.getInput(0), mode, op.getOutput().getSize(), offset);
+            return deref(op.getInput(0), mode, size, offset);
           }
+        } else {
+          return deref(op.getInput(0), mode, size, -1);
         }
         break;
       case PcodeOp.PTRADD:
@@ -153,15 +192,15 @@ public class RetypdGenerate {
             && !op.getInput(1).isAddress()
             && op.getInput(2).isConstant()) {
           int offset = (int) op.getInput(1).getOffset();
-          int size = (int) op.getInput(2).getOffset();
-          if (offset * size >= 0) {
-            return deref(op.getInput(0), mode, op.getOutput().getSize(), offset * size);
+          int strideSize = (int) op.getInput(2).getOffset();
+          if (offset * strideSize >= 0) {
+            return deref(op.getInput(0), mode, size, offset * strideSize);
           }
         }
         break;
     }
 
-    return deref(op.getOutput(), mode, op.getOutput().getSize(), 0);
+    return deref(op.getOutput(), mode, size, 0);
   }
 
   private static Map<String, Map<Integer, String>> typeSize;
@@ -220,8 +259,8 @@ public class RetypdGenerate {
 
   static {
     opTypes = new HashMap<Integer, PcodeOpType>();
-    opTypes.put(PcodeOp.INT_EQUAL, new PcodeOpType("bool", "int", "int"));
-    opTypes.put(PcodeOp.INT_NOTEQUAL, new PcodeOpType("bool", "int", "int"));
+    // opTypes.put(PcodeOp.INT_EQUAL, new PcodeOpType("bool", "int", "int"));
+    // opTypes.put(PcodeOp.INT_NOTEQUAL, new PcodeOpType("bool", "int", "int"));
     opTypes.put(PcodeOp.INT_SLESS, new PcodeOpType("bool", "int", "int"));
     opTypes.put(PcodeOp.INT_SLESSEQUAL, new PcodeOpType("bool", "int", "int"));
     opTypes.put(PcodeOp.INT_LESS, new PcodeOpType("bool", "uint", "uint"));
@@ -270,6 +309,35 @@ public class RetypdGenerate {
     opTypes.put(PcodeOp.FLOAT_ROUND, new PcodeOpType("float", "float"));
   }
 
+  private void applyDecompilerPrototype(Function func, DecompInterface ifc) {
+
+    if (func.getParameters().length > 0) {
+      if (func.getParameter(0).isAutoParameter()) {
+        Msg.info(this, "Auto param: " + func.getParameter(0).getFirstStorageVarnode());
+      }
+      return;
+    }
+
+    Program program = func.getProgram();
+    FunctionManager funcManager = program.getFunctionManager();
+    DecompileResults res = ifc.decompileFunction(func, 300, null);
+    HighFunction highFunc = res.getHighFunction();
+
+    if (highFunc == null) {
+      Msg.warn(this, "Function " + func.getName() + " has no decompilation");
+      return;
+    }
+
+    // Update parameters if we do not have any
+    HighParamID highParams = res.getHighParamID();
+
+    if (highParams != null) {
+      Msg.info(this, "Applied " + highParams.getNumInputs() + " parameters to " + func);
+      highParams.storeParametersToDatabase(true, SourceType.ANALYSIS);
+      highParams.storeReturnToDatabase(true, SourceType.ANALYSIS);
+    }
+  }
+
   /**
    * Generate constraints for a given function
    *
@@ -287,13 +355,6 @@ public class RetypdGenerate {
     if (highFunc == null) {
       Msg.warn(this, "Function " + func.getName() + " has no decompilation");
       return funcConstraints;
-    }
-
-    // Update parameters if we do not have any
-    HighParamID highParams = res.getHighParamID();
-    if (highParams != null && func.getParameters().length == 0) {
-      highParams.storeParametersToDatabase(true, SourceType.ANALYSIS);
-      highParams.storeReturnToDatabase(true, SourceType.ANALYSIS);
     }
 
     Map<String, Integer> params = new HashMap<String, Integer>();
@@ -322,6 +383,17 @@ public class RetypdGenerate {
           VarnodeAST varAST = (VarnodeAST) var;
           HighVariable highVar = varAST.getHigh();
 
+          // Reason about string constants
+          if (highVar != null && highVar instanceof HighConstant) {
+            HighConstant highConst = (HighConstant) highVar;
+            DataType highConstDt = highConst.getDataType();
+
+            if (highConstDt.toString().equals("char *")) {
+              funcConstraints.add(deref(var, "load", 1, -2) + " ⊑ int");
+              funcConstraints.add("int ⊑ " + deref(var, "store", 1, -2));
+            }
+          }
+
           if (varAST.getDef() != null
               || highVar == null
               || varAST.isConstant()
@@ -342,6 +414,11 @@ public class RetypdGenerate {
               funcConstraints.add(varnode(pcode.getInput(1)) + " ⊑ " + functionOut(func));
             }
             break;
+          case PcodeOp.INT_EQUAL:
+          case PcodeOp.INT_NOTEQUAL:
+            funcConstraints.add(varnode(pcode.getInput(0)) + " ⊑ " + varnode(pcode.getInput(1)));
+            funcConstraints.add("bool ⊑ " + varnode(pcode.getOutput()));
+            break;
           case PcodeOp.COPY:
           case PcodeOp.INDIRECT:
           case PcodeOp.CAST:
@@ -352,36 +429,46 @@ public class RetypdGenerate {
               funcConstraints.add(varnode(pcode.getInput(i)) + " ⊑ " + varnode(pcode.getOutput()));
             }
             break;
+          case PcodeOp.CALLIND:
           case PcodeOp.CALL:
             Varnode addr = pcode.getInput(0);
+            Function called = null;
             if (addr.isAddress()) {
-              Function called = funcManager.getFunctionContaining(addr.getAddress());
+              called = funcManager.getFunctionContaining(addr.getAddress());
+            }
+
+            for (int i = 1; i < pcode.getNumInputs(); i++) {
+              VarnodeAST input = (VarnodeAST) pcode.getInput(i);
+
+              if (input.getDef() == null) {
+                continue;
+              }
 
               if (called != null) {
-                for (int i = 1; i < pcode.getNumInputs(); i++) {
-                  VarnodeAST input = (VarnodeAST) pcode.getInput(i);
+                funcConstraints.add(varnode(input) + " ⊑ " + functionIn(called, i - 1));
+              } else {
+                funcConstraints.add(varnode(input) + " ⊑ " + varIn(addr, i - 1));
+              }
+            }
 
-                  if (input.getDef() == null) {
-                    continue;
-                  }
-
-                  funcConstraints.add(varnode(input) + " ⊑ " + functionIn(called, i - 1));
-                }
-
-                if (pcode.getOutput() != null) {
-                  funcConstraints.add(functionOut(called) + " ⊑ " + varnode(pcode.getOutput()));
-                }
+            if (pcode.getOutput() != null) {
+              if (called != null) {
+                funcConstraints.add(functionOut(called) + " ⊑ " + varnode(pcode.getOutput()));
+              } else {
+                funcConstraints.add(varOut(addr) + " ⊑ " + varnode(pcode.getOutput()));
               }
             }
             break;
           case PcodeOp.STORE:
             Varnode var = pcode.getInput(1);
-            String dest = derefLabel(var, "store");
+            int derefSize = pcode.getInput(2).getSize();
+            String dest = derefLabel(var, derefSize, "store");
             funcConstraints.add(varnode(pcode.getInput(2)) + " ⊑ " + dest);
             break;
           case PcodeOp.LOAD:
             var = pcode.getInput(1);
-            String src = derefLabel(var, "load");
+            derefSize = pcode.getOutput().getSize();
+            String src = derefLabel(var, derefSize, "load");
             funcConstraints.add(src + " ⊑ " + varnode(pcode.getOutput()));
             break;
           default:
@@ -412,6 +499,11 @@ public class RetypdGenerate {
     }
 
     Map<String, Set<String>> constraints = new HashMap<String, Set<String>>();
+
+    for (Function func : program.getFunctionManager().getFunctions(false)) {
+      applyDecompilerPrototype(func, ifc);
+    }
+
     for (Function func : program.getFunctionManager().getFunctions(false)) {
       Set<String> funcConstraints = generateForFunction(func, ifc);
       constraints.put(fmtFunctionName(func), funcConstraints);
