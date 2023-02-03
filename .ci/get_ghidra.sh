@@ -22,7 +22,7 @@ rm $GRADLE
 
 # Build ghidra from GrammaTech fork
 # Ghidra_10.2.2 seems to give problems when decompiling with ifc.toggleParamMeasures(true);
-git clone https://github.com/GrammaTech/ghidra.git
+git clone https://github.com/GrammaTech/ghidra.git ghidra_build
 #git clone https://github.com/NationalSecurityAgency/ghidra.git --branch Ghidra_10.2.2_build ghidra_build
 pushd ghidra_build
 
