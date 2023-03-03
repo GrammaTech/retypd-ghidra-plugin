@@ -21,6 +21,11 @@ import ghidra.app.decompiler.DecompileException;
 import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.AbstractIntegerDataType;
+import ghidra.program.model.data.Array;
+import ghidra.program.model.data.FloatDataType;
+import ghidra.program.model.data.Pointer;
+import ghidra.program.model.data.TypeDef;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
@@ -129,7 +134,22 @@ public class RetypdGenerate {
    * @return Type path for use in constraints
    */
   private static String deref(Varnode src, String mode, long size, int offset) {
+    return deref(varnode(src), mode, size, offset, 0);
+  }
+
+  /**
+   * Translate a dereference to a string for constraint generation
+   *
+   * @param label Location which is being dereferenced
+   * @param mode `store` or `load` for Pcode STORE/LOAD respectively
+   * @param size The byte size of the load or store
+   * @param offset The offset into the location that is being dereferenced
+   * @param count The number of array elements in the location that is being dereferenced
+   * @return Type path for use in constraints
+   */
+  private static String deref(String label, String mode, long size, int offset, int count) {
     String offsetStr;
+    String countStr;
 
     switch (offset) {
       case -1:
@@ -142,8 +162,9 @@ public class RetypdGenerate {
         offsetStr = offset + "";
         break;
     }
+    countStr = (count > 1 ? "*" + count : "");
 
-    return varnode(src) + "." + mode + ".σ" + size + "@" + offsetStr;
+    return label + "." + mode + ".σ" + size + "@" + offsetStr + countStr;
   }
 
   /**
@@ -339,6 +360,116 @@ public class RetypdGenerate {
   }
 
   /**
+   * Return a type constraint string for Retypd describing the data type
+   *
+   * @param integerDataType integer data type to describe
+   * @return retypd constraint for the data type
+   */
+  private static String integerRetypdString(AbstractIntegerDataType integerDataType) {
+    int size = integerDataType.getLength() * 8;
+    boolean signed = integerDataType.isSigned();
+    return (signed ? "" : "u") + "int" + size;
+  }
+
+  /**
+   * Return a type constraint string for Retypd describing the data type
+   *
+   * @param floatDataType float data type to describe
+   * @return retypd constraint for the data type
+   */
+  private static String floatRetypdString(FloatDataType floatDataType) {
+    int size = floatDataType.getLength();
+    return size == 4 ? "float" : "double";
+  }
+
+  /**
+   * Return the non-typedef dataType that this typedef is based on,
+   * following chains of typedefs as necessary.
+   *
+   * @param dataType type to canonicalize
+   * @return underlying, non-typedef'd type
+   */
+  private static DataType getTypeDefBaseDataType(DataType dataType) {
+    if (dataType instanceof TypeDef) {
+      return getTypeDefBaseDataType(((TypeDef) dataType).getBaseDataType());
+    }
+    else {
+      return dataType;
+    }
+  }
+
+  /**
+   * Translate an array or pointer data type to a set of retypd constraints
+   *
+   * @param label Label for location to use in constraint
+   * @param dataType type of the underlying array elements or pointed to value
+   * @param count Number of elements in the array (-1 for pointers)
+   * @return Set of retypd constraints
+   */
+  private static Set<String> arrayPointerContraints(String label, DataType dataType, int count) {
+    Set<String> result = new HashSet<String>();
+    int size = dataType.getLength();
+    int offset = 0;
+
+    if (dataType instanceof AbstractIntegerDataType ||
+        dataType instanceof FloatDataType) {
+      String retypedTypeString;
+
+      if (dataType instanceof AbstractIntegerDataType) {
+        retypedTypeString = integerRetypdString((AbstractIntegerDataType) dataType);
+      }
+      else {
+        retypedTypeString = floatRetypdString((FloatDataType) dataType);
+      }
+
+      if (size == 1) {
+        // string special case
+        offset = -2;
+      }
+
+      result.add(deref(label, "load", size, offset, count) + " ⊑ " + retypedTypeString);
+      result.add(retypedTypeString + " ⊑ " + deref(label, "store", size, offset, count));
+    }
+
+    return result;
+  }
+
+  /**
+   * Translate a data type to a set of retypd constraints
+   *
+   * @param label Label for location to use in constraint
+   * @param dataType Type to generate a constraint for
+   * @return Set of retypd constraints
+   */
+  private static Set<String> dataTypeContraints(String label, DataType dataType) {
+    Set<String> result = new HashSet<String>();
+
+    if (dataType instanceof AbstractIntegerDataType) {
+      AbstractIntegerDataType integerDataType = (AbstractIntegerDataType) dataType;
+      result.add(label + " ⊑ " + integerRetypdString(integerDataType));
+    }
+    else if (dataType instanceof FloatDataType) {
+      result.add(label + " ⊑ " + floatRetypdString((FloatDataType) dataType));
+    }
+    else if (dataType instanceof TypeDef) {
+      return dataTypeContraints(label, getTypeDefBaseDataType(dataType));
+    }
+    else if (dataType instanceof Pointer) {
+      Pointer pointerType = (Pointer) dataType;
+      DataType pointedToDataType = getTypeDefBaseDataType(pointerType.getDataType());
+      result.addAll(arrayPointerContraints(label, pointedToDataType, -1));
+    }
+    else if (dataType instanceof Array) {
+      Array arrayType = (Array) dataType;
+      DataType elementType = getTypeDefBaseDataType(arrayType.getDataType());
+      int numElements = arrayType.getNumElements();
+      result.addAll(arrayPointerContraints(label, elementType, numElements));
+    }
+
+    return result;
+  }
+
+  /**
    * Generate constraints for a given function
    *
    * @param func Function to generate constraints for
@@ -359,18 +490,23 @@ public class RetypdGenerate {
 
     Map<String, Integer> params = new HashMap<String, Integer>();
 
-    // Load parameters, and if it has a user defined type, apply it
+    // Load parameters, and if the function has a user defined or
+    // known library type, apply it
     for (Parameter param : func.getParameters()) {
       params.put(param.getName(), param.getOrdinal());
 
-      if (func.getSignatureSource() == SourceType.USER_DEFINED) {
+      if (func.getSignatureSource() == SourceType.USER_DEFINED ||
+          func.getSignatureSource() == SourceType.IMPORTED) {
         int num = param.getOrdinal();
-        funcConstraints.add(functionIn(func, num) + " ⊑ " + param.getDataType().toString());
+        DataType dataType = param.getDataType();
+        funcConstraints.addAll(dataTypeContraints(functionIn(func, num), dataType));
       }
     }
 
-    if (func.getSignatureSource() == SourceType.USER_DEFINED) {
-      funcConstraints.add(func.getReturnType() + " ⊑ " + functionOut(func));
+    if (func.getSignatureSource() == SourceType.USER_DEFINED ||
+        func.getSignatureSource() == SourceType.IMPORTED) {
+      DataType dataType = func.getReturnType();
+      funcConstraints.addAll(dataTypeContraints(functionOut(func), dataType));
     }
 
     for (PcodeBlockBasic block : highFunc.getBasicBlocks()) {
