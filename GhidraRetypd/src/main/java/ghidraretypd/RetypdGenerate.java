@@ -21,6 +21,7 @@ import ghidra.app.decompiler.DecompileException;
 import ghidra.app.decompiler.DecompileOptions;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.AbstractIntegerDataType;
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.FloatDataType;
@@ -31,15 +32,20 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.pcode.FunctionPrototype;
 import ghidra.program.model.pcode.HighConstant;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.HighParamID;
 import ghidra.program.model.pcode.HighVariable;
+import ghidra.program.model.pcode.HighFunctionDBUtil;
+import ghidra.program.model.pcode.HighSymbol;
 import ghidra.program.model.pcode.PcodeBlockBasic;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.pcode.VarnodeAST;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import java.util.HashMap;
@@ -330,6 +336,22 @@ public class RetypdGenerate {
     opTypes.put(PcodeOp.FLOAT_ROUND, new PcodeOpType("float", "float"));
   }
 
+  /**
+   * Apply the given data type to the high symbol
+   *
+   * @param highSymbol symbol to type
+   * @param dataType type to apply to symbol
+   */
+  private static void retypeSymbol(HighSymbol highSymbol, DataType dataType) {
+    try {
+      HighFunctionDBUtil.updateDBVariable(highSymbol, null, dataType, SourceType.USER_DEFINED);
+    }
+    catch (InvalidInputException e) {
+    }
+    catch (DuplicateNameException e) {
+    }
+  }
+
   private void applyDecompilerPrototype(Function func, DecompInterface ifc) {
 
     if (func.getParameters().length > 0) {
@@ -356,6 +378,42 @@ public class RetypdGenerate {
       Msg.info(this, "Applied " + highParams.getNumInputs() + " parameters to " + func);
       highParams.storeParametersToDatabase(true, SourceType.ANALYSIS);
       highParams.storeReturnToDatabase(true, SourceType.ANALYSIS);
+    }
+  }
+
+  /**
+   * Apply the function signature for main
+   *
+   * @param func main function
+   * @param irc decompiler instance
+   */
+  private void applyMainPrototype(Function func, DecompInterface ifc) {
+    Program program = func.getProgram();
+    FunctionManager funcManager = program.getFunctionManager();
+    DecompileResults res = ifc.decompileFunction(func, 300, null);
+    HighFunction highFunc = res.getHighFunction();
+
+    if (res.getErrorMessage().isEmpty()) {
+      DataTypeManager dtm = program.getDataTypeManager();
+      DataType intType = dtm.getDataType("/int");
+      DataType stringArrayType = dtm.getDataType("/char * *");
+      FunctionPrototype proto = highFunc.getFunctionPrototype();
+
+      for (int i = 0; i < proto.getNumParams(); i++) {
+        HighSymbol highSymbol = proto.getParam(i);
+        if (i == 0) {
+          retypeSymbol(highSymbol, intType);
+        }
+        else {
+          retypeSymbol(highSymbol, stringArrayType);
+        }
+      }
+
+      try {
+        func.setReturnType(intType, SourceType.USER_DEFINED);
+      }
+      catch (InvalidInputException e) {
+      }
     }
   }
 
@@ -637,7 +695,12 @@ public class RetypdGenerate {
     Map<String, Set<String>> constraints = new HashMap<String, Set<String>>();
 
     for (Function func : program.getFunctionManager().getFunctions(false)) {
-      applyDecompilerPrototype(func, ifc);
+      if (func.getName().equals("main")) {
+        applyMainPrototype(func, ifc);
+      }
+      else {
+        applyDecompilerPrototype(func, ifc);
+      }
     }
 
     for (Function func : program.getFunctionManager().getFunctions(false)) {
